@@ -119,6 +119,20 @@ def ignore_boundary_cells(cells, boundaries, iterations):
         # mark ignored cells as background for next iteration
         current_cells[ignore_mask==ignore_label] = 0
 
+    # ignore cells which are at the border of the image
+    t,w,h = cells.shape
+    frame = np.zeros((w,h), dtype=bool)
+    frame[0:3,:] = frame[w-3:,:] = frame[:,0:3] = frame[:,h-3:] = True
+    ignore = []
+    for z in range(current_cells.shape[0]):
+        c = current_cells[z]
+        overlay = c[frame]
+        ignore.append(np.unique(overlay[overlay != 0]))
+    
+    # update ignore mask
+    ignore_labelled = replace(cells, np.concatenate(ignore).astype(np.uint64), np.array([ignore_label], dtype=np.uint64))
+    ignore_mask |= (ignore_labelled==ignore_label).astype(np.uint8)
+
     return ignore_mask
 
 def mark_background(cells, bg_size_threshold):
