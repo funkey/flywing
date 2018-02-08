@@ -72,7 +72,7 @@ def train_until(max_iteration):
             os.path.join(data_dir, sample + '.hdf'),
             datasets = {
                 VolumeTypes.RAW: 'volumes/raw',
-                VolumeTypes.GT_LABELS: 'volumes/labels/cells',
+                VolumeTypes.GT_LABELS: 'volumes/labels/lineages',
                 VolumeTypes.GT_MASK: 'volumes/labels/ignore',
             },
             volume_specs = {
@@ -132,7 +132,7 @@ def train_until(max_iteration):
         IntensityScaleShift(0.5, 0.5) +
         Snapshot({
                 VolumeTypes.RAW: 'volumes/raw',
-                VolumeTypes.GT_LABELS: 'volumes/labels/cells',
+                VolumeTypes.GT_LABELS: 'volumes/labels/lineages',
                 VolumeTypes.GT_MASK: 'volumes/labels/mask',
                 VolumeTypes.GT_AFFINITIES: 'volumes/labels/affinities',
                 VolumeTypes.PREDICTED_AFFS: 'volumes/labels/pred_affinities',
