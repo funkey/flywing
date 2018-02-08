@@ -187,6 +187,10 @@ for sample in samples:
                 data = boundaries,
                 compression='gzip')
             outfile.create_dataset(
+                'volumes/labels/cells',
+                data = cells,
+                compression='gzip')
+            outfile.create_dataset(
                 'volumes/labels/lineages',
                 data = lineages,
                 compression='gzip')

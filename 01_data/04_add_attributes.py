@@ -16,6 +16,7 @@ datasets = [
     'volumes/labels/divisions',
     'volumes/labels/boundaries',
     'volumes/labels/cells',
+    'volumes/labels/lineages',
     'volumes/labels/ignore',
 ]
 
