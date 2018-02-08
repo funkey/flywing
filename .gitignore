@@ -1,0 +1,10 @@
+*checkpoint*
+*.meta
+*.hdf
+*.pyc
+*.sw[pmn]
+*.out
+*.err
+*.json
+*.ipynb
+*.config
