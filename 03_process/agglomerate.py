@@ -7,7 +7,6 @@ import waterz
 from coordinate import Coordinate
 from roi import Roi
 from watershed import watershed
-from track_graph import find_edges, contract, relabel
 
 scoring_functions = {
 
@@ -71,7 +70,7 @@ def get_unique_pairs(a, b):
 
     return np.unique([a.flatten(), b.flatten()], axis=1).transpose()
 
-def agglomerate_tracks(
+def agglomerate_lineages(
         affs,
         thresholds,
         roi,
@@ -79,7 +78,7 @@ def agglomerate_tracks(
         output_basenames,
         **kwargs):
 
-    # prepare affinities for slice and track merging
+    # prepare affinities for slice and lineage merging
 
     affs_xy = np.array(affs)
     affs_xy[0] = 0
@@ -94,7 +93,7 @@ def agglomerate_tracks(
 
     i = 0
     # outer loop: merge in 2D only
-    for slices in agglomerate_with_waterz(
+    for cells in agglomerate_with_waterz(
             affs_xy,
             thresholds,
             fragments,
@@ -104,8 +103,8 @@ def agglomerate_tracks(
         f = outfiles[i]
 
         ds = f.create_dataset(
-            'volumes/labels/slices',
-            data=slices,
+            'volumes/labels/cells',
+            data=cells,
             compression="gzip",
             dtype=np.uint64)
         ds.attrs['offset'] = roi.get_offset()
@@ -115,58 +114,33 @@ def agglomerate_tracks(
         print("Agglomerating in z...")
         merge_z_args = kwargs
         merge_z_args['merge_function'] = 'max_aff'
-        for tracks_history in agglomerate_with_waterz(
+        for lineages_history in agglomerate_with_waterz(
             affs_z,
             [thresholds[i]],
-            slices.copy(),
+            cells.copy(),
             return_merge_history=True,
             **merge_z_args):
 
-            tracks = tracks_history[0]
-            history = tracks_history[1]
+            lineages = lineages_history[0]
+            history = lineages_history[1]
 
             merge_list = np.array([ [h['a'], h['b'], h['c']] for h in history ])
             merge_scores = np.array([ h['score'] for h in history ])
 
-            print("Storing merge-history from slices to tracks...")
+            print("Storing lineages...")
             f.create_dataset(
-                'volumes/graphs/tracks_merge_history',
+                'volumes/labels/lineages',
+                data=lineages,
+                compression="gzip")
+
+            print("Storing merge-history from cells to lineages...")
+            f.create_dataset(
+                'graphs/lineages_merge_history',
                 data=merge_list,
                 compression="gzip")
             f.create_dataset(
-                'volumes/graphs/tracks_merge_scores',
+                'graphs/lineages_merge_scores',
                 data=merge_scores,
-                compression="gzip")
-
-            # transform tracks into track graph with one node per 1D track
-
-            print("Extracting track graph...")
-            edges = find_edges(tracks, slices)
-            track_graph = contract(edges, slices)
-            track_graph_labels = relabel(slices, track_graph)
-
-            track_graph_data = np.array([
-                [
-                    t.label,
-                    t.start,
-                    t.end,
-                    t.parent.label if t.parent is not None else 0
-                ]
-                for t in track_graph
-            ], dtype=np.uint64)
-
-            print("Storing track graph...")
-            f.create_dataset(
-                'volumes/labels/tracks',
-                data=track_graph_labels,
-                compression="gzip")
-            f.create_dataset(
-                'volumes/labels/lineages',
-                data=tracks,
-                compression="gzip")
-            f.create_dataset(
-                'volumes/graphs/tracks_graph',
-                data=track_graph_data,
                 compression="gzip")
 
         i += 1
@@ -200,7 +174,7 @@ def agglomerate(
     print "affs ROI: " + str(affs_roi)
 
     start = time.time()
-    agglomerate_tracks(
+    agglomerate_lineages(
         affs,
         thresholds,
         affs_roi,
@@ -226,8 +200,8 @@ if __name__ == '__main__':
 
     # with h5py.File('test_0.200000.hdf', 'r') as f:
 
-        # tracks = np.array(f['volumes/labels/lineages'])
-        # slices = np.array(f['volumes/labels/slices'])
-        # edges = find_edges(tracks, slices)
-        # track_graph = contract(edges, slices)
-        # track_graph_labels = relabel(slices, track_graph)
+        # lineages = np.array(f['volumes/labels/lineages'])
+        # cells = np.array(f['volumes/labels/cells'])
+        # edges = find_edges(lineages, cells)
+        # track_graph = contract(edges, cells)
+        # tracks = relabel(cells, track_graph)

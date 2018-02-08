@@ -1,44 +1,6 @@
-import malis
+from __future__ import print_function
 import numpy as np
 from scipy.ndimage.measurements import center_of_mass
-
-def find_cc_2d(ids):
-
-    slices = []
-
-    max_id = np.uint64(0)
-    for z in range(ids.shape[0]):
-        # ids need to be 3D for malis...
-        frame = np.array([ids[z]])
-        affs = malis.seg_to_affgraph(frame, malis.mknhood3d())
-        nodes = malis.connected_components_affgraph(
-                affs,
-                malis.mknhood3d())
-        nodes = nodes[0][0]
-        bg = nodes==0
-        max_slice_id = nodes.max()
-        nodes += max_id
-        nodes[bg] = 0
-        max_id += max_slice_id
-        slices.append(nodes)
-
-    return np.array(slices)
-
-def find_correspondences(ids, nodes):
-
-    overlay = np.array([ids.flatten(), nodes.flatten()])
-    uniques = np.unique(overlay, axis=1)
-
-    ids_to_nodes = {}
-    for i, n in zip(uniques[0], uniques[1]):
-        if i == 0 or n == 0:
-            continue
-        if i not in ids_to_nodes:
-            ids_to_nodes[i] = [n]
-        else:
-            ids_to_nodes[i].append(n)
-
-    return ids_to_nodes
 
 def find_centers(ids):
 
@@ -50,18 +12,33 @@ def find_centers(ids):
 def dist(a, b):
     return np.linalg.norm(np.array(a) - np.array(b))
 
+def find_possible_edges(ids_prev, ids_next, nodes_prev, nodes_next):
+
+    overlay = np.array([
+        ids_prev.flatten(),
+        ids_next.flatten(),
+        nodes_prev.flatten(),
+        nodes_next.flatten()])
+    uniques = np.unique(overlay, axis=1)
+
+    possible_edges = {}
+    for id_p, id_n, node_p, node_n in zip(uniques[0], uniques[1], uniques[2], uniques[3]):
+        if id_p == id_n:
+            if id_p not in possible_edges:
+                possible_edges[id_p] = []
+            possible_edges[id_p].append((node_p, node_n))
+
+    return possible_edges
+
 def find_edges_between(ids_prev, ids_next, nodes_prev, nodes_next):
 
     edges = []
 
-    # get correspondences between ids and nodes
-    corr_prev = find_correspondences(ids_prev, nodes_prev)
-    corr_next = find_correspondences(ids_next, nodes_next)
-
-    # print("Corr prev:")
-    # print(corr_prev)
-    # print("Corr next:")
-    # print(corr_next)
+    possible_edges = find_possible_edges(
+        ids_prev,
+        ids_next,
+        nodes_prev,
+        nodes_next)
 
     # get center of masses of nodes
     locations = find_centers(nodes_prev)
@@ -71,38 +48,24 @@ def find_edges_between(ids_prev, ids_next, nodes_prev, nodes_next):
     # print(locations)
 
     # for each id
-    for i in set(corr_prev.keys()).union(set(corr_next.keys())):
+    for i, candidates in possible_edges.iteritems():
 
-        prev_nodes = corr_prev[i] if i in corr_prev else []
-        next_nodes = corr_next[i] if i in corr_next else []
-
-        # start of a track
-        if len(prev_nodes) == 0:
-            # print("%d starts"%i)
-            pass
-        # end of a track
-        elif len(next_nodes) == 0:
-            # print("%d ends"%i)
-            pass
         # continuation
-        elif len(prev_nodes) == 1 and len(next_nodes) == 1:
+        if len(candidates) == 1:
+
             # print("%d continues"%i)
-            edges.append((prev_nodes[0], next_nodes[0]))
-        # split
-        elif len(prev_nodes) == 1 and len(next_nodes) > 1:
-            # print("%d splits"%i)
-            for nn in next_nodes:
-                edges.append((prev_nodes[0], nn))
-            pass
-        # multiple continuation (maybe plus split)
+            edges.append(candidates[0])
+
         else:
+
             # print("%d does something complex"%i)
+            prev_nodes = set([p for (p, n) in candidates])
+            next_nodes = set([p for (p, n) in candidates])
 
             pairs = []
-            for pn in prev_nodes:
-                for nn in next_nodes:
-                    distance = dist(locations[pn], locations[nn])
-                    pairs.append((distance, pn, nn))
+            for (p, n) in candidates:
+                distance = dist(locations[p], locations[n])
+                pairs.append((distance, p, n))
             pairs.sort()
             # print("all possible continuations: %s"%pairs)
 
@@ -120,6 +83,7 @@ def find_edges_between(ids_prev, ids_next, nodes_prev, nodes_next):
                     # print("pick %s"%([d, pn, nn]))
                     edges.append((pn, nn))
                     next_nodes.remove(nn)
+
     return edges
 
 def find_edges(ids, nodes):
@@ -127,6 +91,7 @@ def find_edges(ids, nodes):
     edges = []
 
     for z in range(ids.shape[0] - 1):
+        print("Searching for edges out of frame ", z)
         edges.append(
             find_edges_between(
                 ids[z], ids[z+1], nodes[z], nodes[z+1]))
@@ -269,29 +234,48 @@ def relabel(nodes, tracks):
 
     return replace(nodes, old_values, new_values)
 
-def ids_to_track_graph(ids):
+def add_track_graph(seg_file):
+    '''Add a track graph to an HDF5 file.
 
-    # uniquely label each component in each frame, let's call them "nodes"
-    print(ids.shape)
-    nodes = find_cc_2d(ids)
-    print(nodes.shape)
+    In:
 
-    # print("Original IDs:")
-    # print(ids)
-    # print("Nodes:")
-    # print(nodes)
+        'volumes/labels/lineages'
+        'volumes/labels/cells'
 
-    # based on original ids, create a tracking graph by introducing directed
-    # edges between nodes
-    edges = find_edges(ids, nodes)
+    Out:
 
-    # print("Edges:")
-    # print(edges)
+        'volumes/labels/tracks'
+        'graphs/track_graph'
+    '''
 
-    # contract the graph by replacing each chain with a single node, remember
-    # the original nodes
-    tracks = contract(edges, nodes)
+    with h5py.File(seg_file, 'r+') as f:
 
-    ids = relabel(nodes, tracks)
+        lineages = np.array(f['volumes/labels/lineages'])
+        cells = np.array(f['volumes/labels/cells'])
 
-    return tracks, ids
+        # transform lineages and cells into track graph
+
+        print("Extracting track graph...")
+        edges = find_edges(lineages, cells)
+        track_graph = contract(edges, cells)
+        tracks = relabel(cells, track_graph)
+
+        track_graph_data = np.array([
+            [
+                t.label,
+                t.start,
+                t.end,
+                t.parent.label if t.parent is not None else 0
+            ]
+            for t in track_graph
+        ], dtype=np.uint64)
+
+        print("Storing track graph...")
+        f.create_dataset(
+            'volumes/labels/tracks',
+            data=tracks,
+            compression="gzip")
+        f.create_dataset(
+            'graphs/tracks_graph',
+            data=track_graph_data,
+            compression="gzip")
