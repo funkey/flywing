@@ -30,8 +30,8 @@ if __name__ == '__main__':
     jobs = []
 
     # DEBUG
-    for setup, validation in setup_validation.items()[:1]:
-    # for setup, validation in setup_validation.items():
+    # for setup, validation in setup_validation.items()[:1]:
+    for setup, validation in setup_validation.items():
 
         combinations = {
             'experiment': 'FF',
@@ -46,8 +46,7 @@ if __name__ == '__main__':
             'discrete_queues': [True],
             'keep_segmentation': True,
             'dilate_mask': 0,
-            'mask_fragments': True,
-            'section_wises': [True, False]}
+            'mask_fragments': True}
 
         range_keys = [
             'setups',
@@ -56,8 +55,7 @@ if __name__ == '__main__':
             'merge_functions',
             'init_with_maxs',
             'histogram_quantiless',
-            'discrete_queues',
-            'section_wises']
+            'discrete_queues']
 
         jobs.append(EvaluateCombinations(combinations, range_keys))
 
