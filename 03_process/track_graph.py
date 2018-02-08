@@ -25,22 +25,6 @@ def find_cc_2d(ids):
 
     return np.array(slices)
 
-def find_correspondences(ids, nodes):
-
-    overlay = np.array([ids.flatten(), nodes.flatten()])
-    uniques = np.unique(overlay, axis=1)
-
-    ids_to_nodes = {}
-    for i, n in zip(uniques[0], uniques[1]):
-        if i == 0 or n == 0:
-            continue
-        if i not in ids_to_nodes:
-            ids_to_nodes[i] = [n]
-        else:
-            ids_to_nodes[i].append(n)
-
-    return ids_to_nodes
-
 def find_centers(ids):
 
     all_ids = np.unique(ids)
@@ -51,18 +35,33 @@ def find_centers(ids):
 def dist(a, b):
     return np.linalg.norm(np.array(a) - np.array(b))
 
+def find_possible_edges(ids_prev, ids_next, nodes_prev, nodes_next):
+
+    overlay = np.array([
+        ids_prev.flatten(),
+        ids_next.flatten(),
+        nodes_prev.flatten(),
+        nodes_next.flatten()])
+    uniques = np.unique(overlay, axis=1)
+
+    possible_edges = {}
+    for id_p, id_n, node_p, node_n in zip(uniques[0], uniques[1], uniques[2], uniques[3]):
+        if id_p == id_n:
+            if id_p not in possible_edges:
+                possible_edges[id_p] = []
+            possible_edges[id_p].append((node_p, node_n))
+
+    return possible_edges
+
 def find_edges_between(ids_prev, ids_next, nodes_prev, nodes_next):
 
     edges = []
 
-    # get correspondences between ids and nodes
-    corr_prev = find_correspondences(ids_prev, nodes_prev)
-    corr_next = find_correspondences(ids_next, nodes_next)
-
-    # print("Corr prev:")
-    # print(corr_prev)
-    # print("Corr next:")
-    # print(corr_next)
+    possible_edges = find_possible_edges(
+        ids_prev,
+        ids_next,
+        nodes_prev,
+        nodes_next)
 
     # get center of masses of nodes
     locations = find_centers(nodes_prev)
@@ -72,38 +71,24 @@ def find_edges_between(ids_prev, ids_next, nodes_prev, nodes_next):
     # print(locations)
 
     # for each id
-    for i in set(corr_prev.keys()).union(set(corr_next.keys())):
+    for i, candidates in possible_edges.iteritems():
 
-        prev_nodes = corr_prev[i] if i in corr_prev else []
-        next_nodes = corr_next[i] if i in corr_next else []
-
-        # start of a track
-        if len(prev_nodes) == 0:
-            # print("%d starts"%i)
-            pass
-        # end of a track
-        elif len(next_nodes) == 0:
-            # print("%d ends"%i)
-            pass
         # continuation
-        elif len(prev_nodes) == 1 and len(next_nodes) == 1:
+        if len(candidates) == 1:
+
             # print("%d continues"%i)
-            edges.append((prev_nodes[0], next_nodes[0]))
-        # split
-        elif len(prev_nodes) == 1 and len(next_nodes) > 1:
-            # print("%d splits"%i)
-            for nn in next_nodes:
-                edges.append((prev_nodes[0], nn))
-            pass
-        # multiple continuation (maybe plus split)
+            edges.append(candidates[0])
+
         else:
+
             # print("%d does something complex"%i)
+            prev_nodes = set([p for (p, n) in candidates])
+            next_nodes = set([p for (p, n) in candidates])
 
             pairs = []
-            for pn in prev_nodes:
-                for nn in next_nodes:
-                    distance = dist(locations[pn], locations[nn])
-                    pairs.append((distance, pn, nn))
+            for (p, n) in candidates:
+                distance = dist(locations[p], locations[n])
+                pairs.append((distance, p, n))
             pairs.sort()
             # print("all possible continuations: %s"%pairs)
 
@@ -121,6 +106,7 @@ def find_edges_between(ids_prev, ids_next, nodes_prev, nodes_next):
                     # print("pick %s"%([d, pn, nn]))
                     edges.append((pn, nn))
                     next_nodes.remove(nn)
+
     return edges
 
 def find_edges(ids, nodes):

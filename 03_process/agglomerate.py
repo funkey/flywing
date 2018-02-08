@@ -224,3 +224,10 @@ if __name__ == '__main__':
             histogram_quantiles=False,
             discrete_queue=True)
 
+    # with h5py.File('test_0.200000.hdf', 'r') as f:
+
+        # tracks = np.array(f['volumes/labels/lineages'])
+        # slices = np.array(f['volumes/labels/slices'])
+        # edges = find_edges(tracks, slices)
+        # track_graph = contract(edges, slices)
+        # track_graph_labels = relabel(slices, track_graph)
