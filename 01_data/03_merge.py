@@ -2,9 +2,9 @@ import h5py
 import numpy as np
 from scipy.ndimage.morphology import binary_dilation
 
-# number of frames a track should be in to be considered for GT (after merging
-# of tracks)
-solid_cell_threshold = 30
+# number of frames a lineage should be in to be considered for GT (after merging
+# of lineages)
+solid_lineage_threshold = 30
 
 # used to temporarily mark ignore area
 ignore_label = None
@@ -28,7 +28,7 @@ def replace(array, old_values, new_values):
 
     return values_map[array]
 
-def merge_tracks(cells, divisions, ignore_mask):
+def merge_lineages(cells, divisions, ignore_mask):
 
     global ignore_label
     if ignore_label is None:
@@ -100,36 +100,36 @@ def merge_tracks(cells, divisions, ignore_mask):
             ignore.append(l)
 
     # merge
-    cells = replace(cells, np.array(old_values, dtype=np.uint64), np.array(new_values, dtype=np.uint64))
+    lineages = replace(cells, np.array(old_values, dtype=np.uint64), np.array(new_values, dtype=np.uint64))
 
     # update ignore mask
-    ignored = replace(cells, np.array(ignore, dtype=np.uint64), np.array([ignore_label], dtype=np.uint64))
+    ignored = replace(lineages, np.array(ignore, dtype=np.uint64), np.array([ignore_label], dtype=np.uint64))
     ignored = (ignored==ignore_label).astype(np.uint8)
     ignore_mask |= ignored
 
-    return cells, ignore_mask
+    return lineages, ignore_mask
 
-def ignore_isolated_cells(cells):
+def ignore_isolated_lineages(lineages):
 
     global ignore_label
     if ignore_label is None:
-        ignore_label = int(cells.max() + 1)
+        ignore_label = int(lineages.max() + 1)
 
     print("Finding isolated labels...")
 
-    # find number of sections each cell is in
+    # find number of sections each lineage is in
     span = {}
 
-    for z in range(cells.shape[0]):
-        for cell_id in np.unique(cells[z]):
-            if cell_id in span:
-                span[cell_id] += 1
+    for z in range(lineages.shape[0]):
+        for lineage_id in np.unique(lineages[z]):
+            if lineage_id in span:
+                span[lineage_id] += 1
             else:
-                span[cell_id] = 1
+                span[lineage_id] = 1
 
     print("Masking isolated labels...")
-    ignore_cells = np.array([ i for (i, s) in span.items() if s < solid_cell_threshold ], dtype=np.uint64)
-    ignore_mask = replace(cells, ignore_cells, np.array([ignore_label], dtype=np.uint64))
+    ignore_lineages = np.array([ i for (i, s) in span.items() if s < solid_lineage_threshold ], dtype=np.uint64)
+    ignore_mask = replace(lineages, ignore_lineages, np.array([ignore_label], dtype=np.uint64))
     ignore_mask = (ignore_mask==ignore_label).astype(np.uint8)
     print("done.")
 
@@ -153,7 +153,7 @@ def close_ignore_mask(cells, ignore_mask):
 
 for sample in samples:
 
-    print("Merging tracks in %s"%sample)
+    print("Merging lineages in %s"%sample)
 
     with h5py.File(sample + '.hdf', 'r') as infile:
 
@@ -163,13 +163,13 @@ for sample in samples:
         cells = np.array(infile['volumes/labels/cells'])
         ignore_mask = np.array(infile['volumes/labels/ignore'])
 
-        cells, ignore_mask = merge_tracks(cells, divisions, ignore_mask)
+        lineages, ignore_mask = merge_lineages(cells, divisions, ignore_mask)
 
-        ignore_mask |= ignore_isolated_cells(cells)
-        accepted_cells = cells.copy()
-        accepted_cells[ignore_mask==1] = 0
+        ignore_mask |= ignore_isolated_lineages(lineages)
+        accepted_lineages= lineages.copy()
+        accepted_lineages[ignore_mask==1] = 0
 
-        close_ignore_mask(accepted_cells, ignore_mask)
+        close_ignore_mask(accepted_lineages, ignore_mask)
 
         print("Writing merged dataset")
         with h5py.File(sample + '.merged.hdf', 'w') as outfile:
@@ -187,8 +187,8 @@ for sample in samples:
                 data = boundaries,
                 compression='gzip')
             outfile.create_dataset(
-                'volumes/labels/cells',
-                data = cells,
+                'volumes/labels/lineages',
+                data = lineages,
                 compression='gzip')
             outfile.create_dataset(
                 'volumes/labels/ignore',
