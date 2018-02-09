@@ -2,6 +2,7 @@ import sys
 import h5py
 import numpy as np
 from segtra import evaluate_segtra
+from track_graph import add_track_graph
 
 def evaluate_files(res_file, gt_file):
 
@@ -21,19 +22,7 @@ def evaluate_files(res_file, gt_file):
         gt_tracks = np.array(f['volumes/labels/tracks'])
         gt_track_graph = np.array(f['graphs/track_graph'])
 
-    report = evaluate_segtra(seg, gt)
-
-    # DEBUG
-    with h5py.File('gt.hdf', 'w') as f:
-        f.create_dataset(
-            'ids',
-            data = report['gt'],
-            compression='gzip')
-    with h5py.File('seg.hdf', 'w') as f:
-        f.create_dataset(
-            'ids',
-            data = report['seg'],
-            compression='gzip')
+    report = evaluate_segtra(res_tracks, res_track_graph, gt_tracks, gt_track_graph)
 
 if __name__ == "__main__":
 

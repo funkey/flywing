@@ -112,13 +112,3 @@ def evaluate_segtra(res_tracks, res_track_graph, gt_tracks, gt_track_graph):
         'seg_score': seg_score,
         'tra_score': tra_score,
     }
-
-if __name__ == "__main__":
-
-    seg = np.zeros((10, 100, 200), dtype=np.uint64)
-    gt = np.zeros((10, 100, 200), dtype=np.uint64)
-
-    gt[:,50:55,100:105] = 1
-    seg[:,50:55,100:105] = 2
-
-    evaluate_segtra(seg, gt)
