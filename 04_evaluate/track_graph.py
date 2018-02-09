@@ -1,5 +1,6 @@
 from __future__ import print_function
 import numpy as np
+import h5py
 from scipy.ndimage.measurements import center_of_mass
 
 def find_centers(ids):
@@ -60,7 +61,7 @@ def find_edges_between(ids_prev, ids_next, nodes_prev, nodes_next):
 
             # print("%d does something complex"%i)
             prev_nodes = set([p for (p, n) in candidates])
-            next_nodes = set([p for (p, n) in candidates])
+            next_nodes = set([n for (p, n) in candidates])
 
             pairs = []
             for (p, n) in candidates:
@@ -91,7 +92,7 @@ def find_edges(ids, nodes):
     edges = []
 
     for z in range(ids.shape[0] - 1):
-        print("Searching for edges out of frame ", z)
+        # print("Searching for edges out of frame ", z)
         edges.append(
             find_edges_between(
                 ids[z], ids[z+1], nodes[z], nodes[z+1]))
@@ -119,6 +120,9 @@ def contract(edges, nodes):
 
     tracks = []
     node_to_track = {}
+
+    offsprings = {}
+    next_offsprings = {}
 
     # for each frame
     for z in range(len(edges) + 1):
@@ -153,63 +157,44 @@ def contract(edges, nodes):
             if node not in out_nodes:
                 out_nodes[node] = []
 
+        offsprings = next_offsprings
+        next_offsprings = {}
+
         for node in frame_nodes:
 
-            if len(in_nodes[node]) == 0:
+            assert len(in_nodes[node]) <= 1, "Node %d has more than one parents"%node
 
-                # start of new track with label 'node'
-                # print("Start of %d"%node)
+            if len(in_nodes[node]) == 0 or node in offsprings:
 
-                track = Track(z, None, node, None)
+                if node in offsprings:
+                    parent = offsprings[node]
+                else:
+                    parent = None
+
+                track = Track(z, None, node, parent)
                 tracks.append(track)
-                node_to_track[node] = track
 
-            elif len(in_nodes[node]) == 1 and len(out_nodes[node]) == 1:
+                # print("Start of %s"%track)
 
-                # continuation of previous track or right after split
-
-                # there is already a track for this node it was created by a
-                # split right before, then there is nothing to do
-                if node not in node_to_track:
-                    # print("Continuation of %d"%node)
-                    prev_node = in_nodes[node][0]
-                    track = node_to_track[prev_node]
-                    node_to_track[node] = track
-                # else:
-                    # print("%d is first after split"%node)
-
-            elif len(in_nodes[node]) == 1 and len(out_nodes[node]) > 1:
-
-                # split -> end of track
-                # print("Split of %d"%node)
+            else:
 
                 prev_node = in_nodes[node][0]
                 track = node_to_track[prev_node]
-                node_to_track[node] = track
+
+                # print("Continuation of %s"%track)
+
+            # now, node has a track, either new or previous
+            node_to_track[node] = track
+            track.nodes.append(node)
+
+            if len(out_nodes[node]) == 0 or len(out_nodes[node]) > 1:
+
                 track.end = z
-                # print("Ending track %s"%track)
-                # create new tracks for subsequent nodes
-                for nn in out_nodes[node]:
-                    new_track = Track(z + 1, None, nn, track)
-                    tracks.append(new_track)
-                    node_to_track[nn] = new_track
-                # print("Have tracks: %s"%tracks)
+                # print("End of track %s, splits into %s"%(track, out_nodes[node]))
 
-            if len(out_nodes[node]) == 0:
-
-                # end of track
-                # print("End of %d"%node)
-
-                if node not in node_to_track:
-                    prev_node = in_nodes[node][0]
-                    track = node_to_track[prev_node]
-                    node_to_track[node] = track
-                else:
-                    track = node_to_track[node]
-                track.end = z
-
-    for node, track in node_to_track.items():
-        track.nodes.append(node)
+                # remember offsprings for processing of next frame
+                for out_node in out_nodes[node]:
+                    next_offsprings[out_node] = track
 
     return tracks
 
@@ -255,10 +240,19 @@ def add_track_graph(seg_file):
 
         # transform lineages and cells into track graph
 
-        print("Extracting track graph...")
+        # print("Extracting track graph...")
         edges = find_edges(lineages, cells)
         track_graph = contract(edges, cells)
         tracks = relabel(cells, track_graph)
+
+        for t in track_graph:
+            assert t.label is not None
+            assert t.start is not None
+            assert t.end is not None, (
+                "Track %d has no end, nodes: %s"%(t.label, t.nodes))
+
+            # parent = 0 if t.parent is None else t.parent.label
+            # print("Track %d from %d to %d, parent %d"%(t.label, t.start, t.end, parent))
 
         track_graph_data = np.array([
             [
@@ -270,7 +264,12 @@ def add_track_graph(seg_file):
             for t in track_graph
         ], dtype=np.uint64)
 
-        print("Storing track graph...")
+        # print("Storing track graph...")
+
+        if 'volumes/labels/tracks' in f:
+            del f['volumes/labels/tracks']
+            del f['graphs/tracks_graph']
+
         f.create_dataset(
             'volumes/labels/tracks',
             data=tracks,
