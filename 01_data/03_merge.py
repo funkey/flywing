@@ -151,6 +151,18 @@ def close_ignore_mask(cells, ignore_mask):
         # every pixel not on dilated foreground and on background is false boundary
         ignore_mask[z] |= np.logical_and(np.logical_not(fg), cells[z]==0)
 
+def label_unique_2D(cells):
+    '''Assign each cell a unique ID in each frame.'''
+
+    next_id = 1
+    for z in range(cells.shape[0]):
+
+        frame = cells[z]
+        old_values = np.unique(frame[frame>0])
+        new_values = np.arange(next_id, next_id + len(old_values))
+        cells[z] = replace(frame, old_values, new_values)
+        next_id += len(old_values)
+
 for sample in samples:
 
     print("Merging lineages in %s"%sample)
@@ -164,6 +176,8 @@ for sample in samples:
         ignore_mask = np.array(infile['volumes/labels/ignore'])
 
         lineages, ignore_mask = merge_lineages(cells, divisions, ignore_mask)
+
+        label_unique_2D(cells)
 
         ignore_mask |= ignore_isolated_lineages(lineages)
         accepted_lineages= lineages.copy()
