@@ -1,0 +1,12 @@
+Dataset conventions
+===================
+
+  /volumes/labels
+
+    /cells    2D segmentation, unique IDs per cell and frame
+    /lineages 3D segmentation, unique ID per lineage
+    /tracks   3D segmentation, unique ID per "track" (chain of "cells" between start, end, or split)
+
+  /graphs
+
+    /track_graph  Graph of "tracks", matrix with rows (ID, start, end, parent ID or 0)
