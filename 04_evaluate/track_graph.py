@@ -89,6 +89,8 @@ def find_edges_between(ids_prev, ids_next, nodes_prev, nodes_next):
 
 def find_edges(ids, nodes):
 
+    print("Finding inter-frame edges...")
+
     edges = []
 
     for z in range(ids.shape[0] - 1):
@@ -117,6 +119,8 @@ class Track:
                 self.start, self.end, self.nodes, parent)
 
 def contract(edges, nodes):
+
+    print("Contracting tracks...")
 
     tracks = []
     node_to_track = {}
@@ -207,6 +211,8 @@ def replace(array, old_values, new_values):
 
 def relabel(nodes, tracks):
 
+    print("Relabelling volume...")
+
     old_values = []
     new_values = []
     for track in tracks:
@@ -232,6 +238,15 @@ def add_track_graph(seg_file):
         'volumes/labels/tracks'
         'graphs/track_graph'
     '''
+
+    print("Adding track graph to %s..."%seg_file)
+
+    with h5py.File(seg_file, 'r+') as f:
+
+        if 'volumes/labels/tracks' in f:
+            del f['volumes/labels/tracks']
+        if 'graphs/track_graph' in f:
+            del f['graphs/track_graph']
 
     with h5py.File(seg_file, 'r+') as f:
 
@@ -266,15 +281,11 @@ def add_track_graph(seg_file):
 
         # print("Storing track graph...")
 
-        if 'volumes/labels/tracks' in f:
-            del f['volumes/labels/tracks']
-            del f['graphs/tracks_graph']
-
         f.create_dataset(
             'volumes/labels/tracks',
             data=tracks,
             compression="gzip")
         f.create_dataset(
-            'graphs/tracks_graph',
+            'graphs/track_graph',
             data=track_graph_data,
             compression="gzip")
