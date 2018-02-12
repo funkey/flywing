@@ -1,6 +1,7 @@
 import sys
 import h5py
 import numpy as np
+import json
 from segtra import evaluate_segtra
 from track_graph import add_track_graph
 
@@ -23,6 +24,10 @@ def evaluate_files(res_file, gt_file):
         gt_track_graph = np.array(f['graphs/track_graph'])
 
     report = evaluate_segtra(res_tracks, res_track_graph, gt_tracks, gt_track_graph)
+
+    report_file = res_file[:-3] + 'json'
+    with open(report_file, 'w') as f:
+        json.dumps(report, f, indent=2)
 
 if __name__ == "__main__":
 
