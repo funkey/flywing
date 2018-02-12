@@ -185,6 +185,9 @@ for sample in samples:
 
         close_ignore_mask(accepted_lineages, ignore_mask)
 
+        cells[ignore_mask==1] = 0
+        lineages[ignore_mask==1] = 0
+
         print("Writing merged dataset")
         with h5py.File(sample + '.merged.hdf', 'w') as outfile:
 

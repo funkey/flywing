@@ -181,7 +181,6 @@ for sample in samples:
         cells = np.array(infile['volumes/labels/cells'])
 
         cells = mark_background(cells, bg_size_threshold)
-        original_cells = cells.copy()
 
         ignore_mask = np.zeros(cells.shape, dtype=np.uint8)
 
@@ -199,21 +198,21 @@ for sample in samples:
 
             outfile.create_dataset(
                 'volumes/raw',
-                data = raw,
+                data=raw,
                 compression='gzip')
             outfile.create_dataset(
                 'volumes/labels/divisions',
-                data = divisions,
+                data=divisions,
                 compression='gzip')
             outfile.create_dataset(
                 'volumes/labels/boundaries',
-                data = boundaries,
+                data=boundaries,
                 compression='gzip')
             outfile.create_dataset(
                 'volumes/labels/cells',
-                data = original_cells,
+                data=cells,
                 compression='gzip')
             outfile.create_dataset(
                 'volumes/labels/ignore',
-                data = ignore_mask,
+                data=ignore_mask,
                 compression='gzip')
