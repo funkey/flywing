@@ -1,3 +1,4 @@
+import sys
 import h5py
 import json
 import numpy as np
@@ -47,7 +48,8 @@ def agglomerate_with_waterz(
         discrete_queue=False,
         merge_function='median_aff',
         init_with_max=True,
-        return_merge_history=False):
+        return_merge_history=False,
+        **kwargs):
 
     if init_with_max:
         merge_function += '_maxinit'
@@ -72,6 +74,7 @@ def get_unique_pairs(a, b):
 
 def agglomerate_lineages(
         affs,
+        ignore_mask,
         thresholds,
         roi,
         resolution,
@@ -79,6 +82,8 @@ def agglomerate_lineages(
         **kwargs):
 
     # prepare affinities for slice and lineage merging
+
+    affs[:,ignore_mask==1] = 0
 
     affs_xy = np.array(affs)
     affs_xy[0] = 0
@@ -88,6 +93,7 @@ def agglomerate_lineages(
 
     print("Extracting initial fragments...")
     fragments = watershed(affs, 'maxima_distance')
+    fragments[ignore_mask==1] = 0
 
     outfiles = [ h5py.File(n + '.hdf', 'w') for n in output_basenames ]
 
@@ -161,21 +167,28 @@ def agglomerate(
     thresholds = list(thresholds)
 
     aff_data_dir = os.path.join(os.getcwd(), 'processed', setup, str(iteration))
-    affs_filename = os.path.join(aff_data_dir, sample + ".hdf")
+    affs_filename = os.path.join(aff_data_dir, sample + '.hdf')
+    gt_data_dir = os.path.join(os.getcwd(), '../01_data')
+    gt_filename = os.path.join(gt_data_dir, sample + '.hdf')
 
     print "Agglomerating " + sample + " with " + setup + ", iteration " + str(iteration) + " at thresholds " + str(thresholds)
 
     print "Reading affinities..."
-    affs_file = h5py.File(affs_filename, 'r')
-    affs = affs_file['volumes/predicted_affs']
-    affs_offset_nm = Coordinate(affs_file['volumes/predicted_affs'].attrs['offset'])
-    resolution = Coordinate(affs_file['volumes/predicted_affs'].attrs['resolution'])
-    affs_roi = Roi(affs_offset_nm, resolution*affs.shape[1:])
-    print "affs ROI: " + str(affs_roi)
+    with h5py.File(affs_filename, 'r') as affs_file:
+        affs = np.array(affs_file['volumes/predicted_affs'])
+        affs_offset_nm = Coordinate(affs_file['volumes/predicted_affs'].attrs['offset'])
+        resolution = Coordinate(affs_file['volumes/predicted_affs'].attrs['resolution'])
+        affs_roi = Roi(affs_offset_nm, resolution*affs.shape[1:])
+        print "affs ROI: " + str(affs_roi)
+
+    print "Reading ignore mask..."
+    with h5py.File(gt_filename, 'r') as gt_file:
+        ignore_mask = np.array(gt_file['volumes/labels/ignore'])
 
     start = time.time()
     agglomerate_lineages(
         affs,
+        ignore_mask,
         thresholds,
         affs_roi,
         resolution,
@@ -183,25 +196,9 @@ def agglomerate(
         **kwargs)
     print "Finished agglomeration in " + str(time.time() - start) + "s"
 
-if __name__ == '__main__':
+if __name__ == "__main__":
 
-    thresholds = [0.2, 0.5]
-
-    agglomerate(
-            setup='setup01_both_pro01',
-            iteration=100000,
-            sample='pro05',
-            thresholds=thresholds,
-            output_basenames=['test_%3f'%t for t in thresholds],
-            merge_function='mean_aff',
-            init_with_max=False,
-            histogram_quantiles=False,
-            discrete_queue=True)
-
-    # with h5py.File('test_0.200000.hdf', 'r') as f:
-
-        # lineages = np.array(f['volumes/labels/lineages'])
-        # cells = np.array(f['volumes/labels/cells'])
-        # edges = find_edges(lineages, cells)
-        # track_graph = contract(edges, cells)
-        # tracks = relabel(cells, track_graph)
+    args_file = sys.argv[1]
+    with open(args_file, 'r') as f:
+        args = json.load(f)
+    agglomerate(**args)
