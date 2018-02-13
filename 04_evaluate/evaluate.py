@@ -27,7 +27,9 @@ def evaluate_files(res_file, gt_file):
 
     report_file = res_file[:-3] + 'json'
     with open(report_file, 'w') as f:
-        json.dumps(report, f, indent=2)
+        json.dump(report, f, indent=2)
+
+    print("Saved report %s in %s"%(report, report_file))
 
 if __name__ == "__main__":
 
