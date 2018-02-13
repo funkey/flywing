@@ -7,12 +7,14 @@ import pandas
 # operations. So we replce it with this magic value and convert back later.
 NAN_PLACEHOLDER = -np.inf
 
-metric_keys = ['threshold', 'voi_split', 'voi_merge', 'voi_sum', 'rand_split', 'rand_merge', 'arand', 'cremi_score']
-nonrelevant_keys = ['raw', 'gt', 'affinities', 'segmentation', 'offset' ]
+metric_keys = ['threshold', 'seg_score', 'tra_score']
+nonrelevant_keys = ['raw', 'gt', 'affinities', 'segmentation', 'offset', 'thresholds', 'error', 'output_basenames' ]
 
-def find_best(results, score='cremi_score', k=3):
+def find_best(results, score='tra_score', k=3, lower_is_better=True):
     '''Find the best configurations for each of the given samples in one experiment.
     '''
+    drop = list(set(results.keys()).intersection(set(nonrelevant_keys)))
+    results = results.drop(columns=drop)
 
     # nan values lead to exclusion in group-by operations
     results = results.replace(np.nan, NAN_PLACEHOLDER)
@@ -21,11 +23,14 @@ def find_best(results, score='cremi_score', k=3):
     #   the sorting is actually crucial: assuming that pandas is not changing 
     #   the row order when grouping, this ensures that we find the best scores 
     #   as the first entries in each group
-    results = results.sort_values(by=score)
+    results = results.sort_values(by=score, ascending=lower_is_better)
 
     # for each configuration, select the row with the minimal score
     configuration_keys = list(set(results.keys()) - set(metric_keys) - set(nonrelevant_keys))
-    configuration_results = results.groupby(configuration_keys).first()
+    configuration_groups = results.groupby(configuration_keys)
+    # for key, item in configuration_groups:
+        # print(configuration_groups.get_group(key), "\n")
+    configuration_results = configuration_groups.first()
 
     # now we have a dataframe with hierarchical index, flatten it for further 
     # processing
@@ -36,7 +41,9 @@ def find_best(results, score='cremi_score', k=3):
     #   the values are not sorted anymore (and can't be in general), so we sort 
     #   again to make sure the next group command has the minimal values at the 
     #   top
-    configuration_results = configuration_results.sort_values(by=score)
+    configuration_results = configuration_results.sort_values(
+        by=score,
+        ascending=lower_is_better)
 
     # group again by sample, take first k per sample
     sample_results = configuration_results.groupby('sample').head(k)
@@ -44,15 +51,20 @@ def find_best(results, score='cremi_score', k=3):
     # sort again by group
     #   this seems necessary, as otherwise pandas shuffles the samples by 
     #   sorting by score
-    sample_results = sample_results.sort_values(by=['sample', score])
+    sample_results = sample_results.sort_values(
+        by=['sample', score],
+        ascending=lower_is_better)
 
     # convert nan back
     sample_results = sample_results.replace(NAN_PLACEHOLDER, np.nan)
 
     return sample_results
 
-def find_best_average(results, score='cremi_score', k=3):
+def find_best_average(results, score='tra_score', k=3, lower_is_better=True):
     '''Find the configurations that perform best on average over all samples.'''
+
+    drop = list(set(results.keys()).intersection(set(nonrelevant_keys)))
+    results = results.drop(columns=drop)
 
     # nan values lead to trouble in group-by aggregations
     results = results.replace(np.nan, NAN_PLACEHOLDER)
@@ -73,7 +85,7 @@ def find_best_average(results, score='cremi_score', k=3):
     results = results.reset_index()
     # results['sample'] = 'average'
 
-    return find_best(results, score, k)
+    return find_best(results, score, k, lower_is_better)
 
 def curate_value(v):
     # holy cow, this null/nan handling is really broken...
@@ -81,13 +93,24 @@ def curate_value(v):
         return np.nan
     return v
 
-def create_evaluation_report(results, k=5, setups=None, score='cremi_score', show_plots=False):
+def create_evaluation_report(
+        results,
+        k=5,
+        setups=None,
+        score='tra_score',
+        show_plots=False,
+        lower_is_better=True):
+
+    drop = list(set(results.keys()).intersection(set(nonrelevant_keys)))
+    results = results.drop(columns=drop)
 
     best_results = []
     # show average only if there is more than one sample
     if len(np.unique(results['sample'])) > 1:
-        best_results.append(find_best_average(results, k=k, score=score))
-    best_results.append(find_best(results, k=k, score=score))
+        best_results.append(find_best_average(results, k=k, score=score,
+            lower_is_better=lower_is_better))
+    best_results.append(find_best(results, k=k, score=score,
+        lower_is_better=lower_is_better))
 
     print("Evaluated setups: " + str(np.unique(results['setup'])))
 
@@ -107,13 +130,8 @@ def create_evaluation_report(results, k=5, setups=None, score='cremi_score', sho
                 'iteration',
                 'merge_function',
                 'threshold',
-                'cremi_score',
-                'voi_split',
-                'voi_merge',
-                'voi_sum',
-                'rand_split',
-                'rand_merge',
-                'arand']
+                'seg_score',
+                'tra_score']
 
             table_keys = first_table_keys + [
                 key
@@ -132,11 +150,8 @@ def create_evaluation_report(results, k=5, setups=None, score='cremi_score', sho
                     }
                 ]
                 figures = [
-                    {'x_axis': 'threshold',  'y_axis': 'voi_sum', 'title': 'VOI'},
-                    {'x_axis': 'threshold',  'y_axis': 'arand', 'title': 'ARAND'},
-                    {'x_axis': 'threshold',  'y_axis': 'cremi_score', 'title': 'CREMI score'},
-                    {'x_axis': 'voi_split',  'y_axis': 'voi_merge', 'title': 'VOI'},
-                    {'x_axis': 'rand_split', 'y_axis': 'rand_merge', 'title': 'RAND'},
+                    {'x_axis': 'threshold',  'y_axis': 'seg_score', 'title': 'SEG'},
+                    {'x_axis': 'threshold',  'y_axis': 'tra_score', 'title': 'TRA'},
                 ]
                 configurations = [
                     # for all thresholds
