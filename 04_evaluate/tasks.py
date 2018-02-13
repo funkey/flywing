@@ -218,7 +218,7 @@ class Evaluate(ConfigTask):
                     'run_lsf',
                     '-c', '2',
                     '-m', '10000',
-                    'python -u ../04_evaluate/02_evaluate.py ' + res_file + ' ' + gt_file
+                    'python -u ../04_evaluate/evaluate.py ' + res_file + ' ' + gt_file
                 ], stdout=o, stderr=e)
 
 class EvaluateCombinations(luigi.task.WrapperTask):
