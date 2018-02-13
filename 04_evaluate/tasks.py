@@ -202,7 +202,9 @@ class Evaluate(ConfigTask):
 
     def output(self):
 
-        return JsonTarget(self.output_basename(self.threshold) + '.json', 'setup', self.get_setup())
+        return JsonTarget(
+            self.output_basename(self.threshold) + '.json',
+            'tra_score')
 
     def run(self):
 
