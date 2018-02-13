@@ -126,7 +126,7 @@ def parse_loss_files(files):
     Lines with the same iteration overwrite existing values in the order of files given.'''
 
     losses = {}
-    iter_loss_re   = re.compile(r'.*teration.([0-9]+),* loss\s*=\s*([0-9.]+).*$')
+    iter_loss_re = re.compile(r'.*teration.([0-9]+),* loss\s*=\s*([0-9.]+).*$')
     for f in files:
         if not os.path.exists(f):
             continue
@@ -138,31 +138,31 @@ def parse_loss_files(files):
 
     return losses
 
-def parse_train_losses(experiment, setup):
+def parse_train_losses(base_dir, setup):
 
     # old-style training losses are here
-    loss_files = [os.path.join(experiment, '02_train', setup, 'train.err')]
+    loss_files = [os.path.join(base_dir, '02_train', setup, 'train.err')]
     # old luigi-training losses are here
-    loss_files += glob.glob(os.path.join(experiment, '02_train', 'log', 'TrainTask_' + setup + '_CREMI_*.err'))
+    loss_files += glob.glob(os.path.join(base_dir, '02_train', 'log', 'TrainTask_' + setup + '_CREMI_*.err'))
     # new luigi-training losses are here
-    loss_files += glob.glob(os.path.join(experiment, '02_train', setup, 'train_*.err'))
+    loss_files += glob.glob(os.path.join(base_dir, '02_train', setup, 'train_*.err'))
     # or here
-    loss_files += glob.glob(os.path.join(experiment, '02_train', setup, 'train_*.out'))
+    loss_files += glob.glob(os.path.join(base_dir, '02_train', setup, 'train_*.out'))
     # or here
-    loss_files += glob.glob(os.path.join(experiment, '02_train', setup, 'train.log'))
+    loss_files += glob.glob(os.path.join(base_dir, '02_train', setup, 'train.log'))
 
     return parse_loss_files(loss_files)
 
-def read_setups(experiment):
+def read_setups(base_dir):
     '''Returns two tables in the form of dictionaries:
 
         (setups, train_losses)
 
     'setups' contains a description of the setups.
-    'train_losses' the training loss for each experiment, setup, and iteration.
+    'train_losses' the training loss for each setup and iteration.
     '''
 
-    setups_dir = os.path.join(experiment, '02_train')
+    setups_dir = os.path.join(base_dir, '02_train')
     setups = [ os.path.basename(x) for x in glob.glob(os.path.join(setups_dir, '*')) ]
     setups = [ x for x in setups if x.startswith('setup') ]
 
@@ -176,7 +176,6 @@ def read_setups(experiment):
         setup_dir = os.path.join(setups_dir, setup)
 
         record = {}
-        record['experiment'] = experiment
         record['setup'] = setup
 
         # general train options
@@ -194,10 +193,9 @@ def read_setups(experiment):
         setup_records.append(record)
 
         # training losses
-        losses = parse_train_losses(experiment, setup)
+        losses = parse_train_losses(base_dir, setup)
         df = pandas.DataFrame({
             'setup': [setup]*len(losses),
-            'experiment': [experiment]*len(losses),
             'iteration': losses.keys(),
             'loss': losses.values(),
         })
@@ -212,48 +210,72 @@ def read_setups(experiment):
 
     return (setups_df, losses_df)
 
+def create_result_row(row, filename):
+
+    # for a result file like
+    #
+    #   pro04_mean_aff_0.8_cf_dq_mf0.2.json
+    #
+    # there is a config file
+    #
+    #   pro04_mean_aff_0.8_cf_dq_mf.config
+    #
+    # describing everything except the threshold used
+
+    threshold_re = re.compile(r'(.*[^0-9\.])([0-9.]+).json$')
+
+    match = threshold_re.match(filename)
+    basename = match.group(1)
+    threshold = float(match.group(2))
+
+    # add configuration to row
+    config_file = basename + '.config'
+    with open(config_file, 'r') as f:
+        row.update(json.load(f))
+
+    # add actual threshold to row
+    row['threshold'] = threshold
+
+    return row
+
 if __name__ == '__main__':
 
-    for experiment in ['cremi_gunpowder', 'snemi_gunpowder', 'fib25', 'cremi', 'segem']:
+    setups = []
+    losses = []
+    results = []
 
-        setups = []
-        losses = []
-        results = []
+    base_dir = '..'
 
-        print
-        print("Parsing experiment " + experiment)
-        print("--------------------------------------------------")
+    process_dir = os.path.join(base_dir, '03_process', 'processed')
+    df = report.read_all_results(
+        data_dir=process_dir,
+        row_generator=create_result_row)
+    results.append(df)
 
-        setups_df, losses_df = read_setups(experiment)
-        setups.append(setups_df)
-        losses.append(losses_df)
+    setups_df, losses_df = read_setups(base_dir)
+    setups.append(setups_df)
+    losses.append(losses_df)
 
-        for stage in ['03_process_training', '04_process_testing', '03_process']:
-            process_dir = os.path.join(experiment, stage, 'processed')
-            df = report.read_all_results(data_dir=process_dir)
-            df['experiment'] = [experiment]*len(df)
-            results.append(df)
+    setups = pandas.concat(setups, ignore_index=True)
+    losses = pandas.concat(losses, ignore_index=True)
+    results = pandas.concat(results, ignore_index=True)
 
-        setups = pandas.concat(setups, ignore_index=True)
-        losses = pandas.concat(losses, ignore_index=True)
-        results = pandas.concat(results, ignore_index=True)
+    try:
+        os.remove('.results.hdf')
+    except:
+        pass
 
-        try:
-            os.remove('.experiments.hdf')
-        except:
-            pass
+    print("Storing tables in temporary HDF file...")
+    setups.to_hdf('.results.hdf', 'setups')
+    losses.to_hdf('.results.hdf', 'losses')
+    results.to_hdf('.results.hdf', 'results')
+    print("Done.")
 
-        print("Storing tables in temporary HDF file...")
-        setups.to_hdf('.experiments.hdf', 'setups')
-        losses.to_hdf('.experiments.hdf', 'losses')
-        results.to_hdf('.experiments.hdf', 'results')
-        print("Done.")
-
-        start = time()
-        setups = pandas.read_hdf('.experiments.hdf', 'setups')
-        losses = pandas.read_hdf('.experiments.hdf', 'losses')
-        results = pandas.read_hdf('.experiments.hdf', 'results')
-        print("Read back DB in %fs"%(time()-start))
-        print("Replacing previous DB with update")
-        os.rename('.experiments.hdf', 'experiments_%s.hdf'%experiment)
-        print("Done, experiment DB updated.")
+    start = time()
+    setups = pandas.read_hdf('.results.hdf', 'setups')
+    losses = pandas.read_hdf('.results.hdf', 'losses')
+    results = pandas.read_hdf('.results.hdf', 'results')
+    print("Read back DB in %fs"%(time()-start))
+    print("Replacing previous DB with update")
+    os.rename('.results.hdf', 'results.hdf')
+    print("Done, experiment DB updated.")
