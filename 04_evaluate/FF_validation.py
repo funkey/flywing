@@ -1,9 +1,6 @@
 import luigi
 
-import sys
 import os
-sys.path.append('../src/caffe_luigi')
-import numpy as np
 from tasks import *
 
 if __name__ == '__main__':
