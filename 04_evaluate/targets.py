@@ -46,7 +46,7 @@ class HdfAttributeTarget(luigi.Target):
 
 class JsonTarget(luigi.Target):
 
-    def __init__(self, filename, key, value):
+    def __init__(self, filename, key, value=None):
         self.filename = filename
         self.key = key
         self.value = value
@@ -63,6 +63,7 @@ class JsonTarget(luigi.Target):
                     # print "no key %s"%self.key
                     return False
                 # print "%s == %s?"%(self.value,d[self.key])
-                return self.value == d[self.key]
+                if self.value is not None:
+                    return self.value == d[self.key]
         except:
             return False
