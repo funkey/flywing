@@ -26,9 +26,7 @@ if __name__ == '__main__':
 
     jobs = []
 
-    # DEBUG
-    for setup, validation in setup_validation.items()[:1]:
-    # for setup, validation in setup_validation.items():
+    for setup, validation in setup_validation.items():
 
         combinations = {
             'experiment': 'FF',
