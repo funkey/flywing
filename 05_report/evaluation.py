@@ -60,32 +60,41 @@ def find_best(results, score='tra_score', k=3, lower_is_better=True):
 
     return sample_results
 
-def find_best_average(results, score='tra_score', k=3, lower_is_better=True):
-    '''Find the configurations that perform best on average over all samples.'''
+def average_validation(results):
 
     drop = list(set(results.keys()).intersection(set(nonrelevant_keys)))
     results = results.drop(columns=drop)
 
+    # first, make sure we only work on the validation results
+    results = results[results['sample']==results['validation_sample']]
+
     # nan values lead to trouble in group-by aggregations
     results = results.replace(np.nan, NAN_PLACEHOLDER)
 
-    # replace sample results with averages
+    # get all keys that make one configuration to group results by
     configuration_keys = list(
         set(results.keys()) -
         set(metric_keys) -
         set(nonrelevant_keys))
     configuration_keys.remove('sample')
+    configuration_keys.remove('test_sample')
+    configuration_keys.remove('validation_sample')
+    configuration_keys.remove('original_name')
     configuration_keys.append('threshold')
 
+    # tell pandas how to agglomerate values in groups
     agg_keys = list(metric_keys)
     agg_keys.remove('threshold')
     agg_functions = { k: 'mean' for k in agg_keys}
     agg_functions['sample'] = lambda x: "average_over_%d"%len(x)
-    results = results.groupby(configuration_keys).agg(agg_functions)
-    results = results.reset_index()
-    # results['sample'] = 'average'
 
-    return find_best(results, score, k, lower_is_better)
+    # group results by configurations
+    groups = results.groupby(configuration_keys)
+
+    results = groups.agg(agg_functions)
+    results = results.reset_index()
+
+    return results
 
 def curate_value(v):
     # holy cow, this null/nan handling is really broken...
