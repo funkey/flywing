@@ -4,7 +4,7 @@ import waterz
 import itertools
 import json
 from targets import *
-from subprocess import check_call, CalledProcessError
+from subprocess import Popen, check_output, CalledProcessError, STDOUT
 
 base_dir = '.'
 def set_base_dir(d):
@@ -17,17 +17,64 @@ def mkdirs(path):
     except:
         pass
 
-def call(command, stdout, stderr):
+def call(command, log_out, log_err):
 
-    try:
-        output = check_call(command, stdout=stdout, stderr=stderr)
-    except CalledProcessError as exc:
-        raise Exception("Calling %s failed with recode %s, stderr in %s"%(
-            ' '.join(command),
-            exc.returncode,
-            stderr.name))
+    # using Popen directly (seems to sometimes respond to ^C? what a mess!)
+    ##############################
 
-    return output
+    print("Calling %s, logging to %s"%(' '.join(command), log_out))
+
+    with open(log_out, 'w') as stdout:
+        with open(log_err, 'w') as stderr:
+            process = Popen(command, stdout=stdout, stderr=stderr)
+            # wait for output to finish
+            try:
+                process.communicate()
+            except KeyboardInterrupt:
+                try:
+                    print("Killing process...")
+                    process.kill()
+                except OSError:
+                    pass
+                process.wait()
+                raise
+            if process.returncode != 0:
+                raise Exception(
+                    "Calling %s failed with code %s, see log in %s, %s"%(
+                        ' '.join(command),
+                        process.returncode,
+                        log_out,
+                        log_err))
+
+    # using check_output, output written only at end (^C not working,
+    # staircasing)
+    ##############################
+
+    # output = ""
+    # try:
+        # output = check_output(command)
+    # except CalledProcessError as e:
+        # output = e.output
+        # raise Exception("Calling %s failed with recode %s, log in %s"%(
+            # ' '.join(command),
+            # e.returncode,
+            # log_out))
+    # finally:
+        # with open(log_out, 'w') as stdout:
+            # stdout.write(output)
+
+    # using check_call, seems to cause trouble (^C not working, staircasing)
+    ##############################
+
+    # try:
+        # output = check_call(command, stdout=stdout, stderr=stderr)
+    # except CalledProcessError as exc:
+        # raise Exception("Calling %s failed with recode %s, stderr in %s"%(
+            # ' '.join(command),
+            # exc.returncode,
+            # stderr.name))
+
+    # return output
 
 class RunTasks(luigi.WrapperTask):
     '''Top-level task to run several tasks.'''
@@ -63,15 +110,13 @@ class TrainTask(luigi.Task):
         log_out = log_base + '.out'
         log_err = log_base + '.err'
         os.chdir(os.path.join(base_dir, '02_train', self.setup))
-        with open(log_out, 'w') as o:
-            with open(log_err, 'w') as e:
-                call([
-                    'run_lsf',
-                    '-c', '10',
-                    '-g', '1',
-                    '-d', 'funkey/gunpowder:v0.3-pre5',
-                    'python -u train_until.py ' + str(self.iteration) + ' 0'
-                ], stdout=o, stderr=e)
+        call([
+            'run_lsf',
+            '-c', '10',
+            '-g', '1',
+            '-d', 'funkey/gunpowder:v0.3-pre5',
+            'python -u train_until.py ' + str(self.iteration) + ' 0'
+        ], log_out, log_err)
 
 class ProcessTask(luigi.Task):
 
@@ -95,16 +140,14 @@ class ProcessTask(luigi.Task):
         log_out = log_base + '.out'
         log_err = log_base + '.err'
         os.chdir(os.path.join(base_dir, '03_process'))
-        with open(log_out, 'w') as o:
-            with open(log_err, 'w') as e:
-                call([
-                    'run_lsf',
-                    '-c', '2',
-                    '-g', '1',
-                    '-m', '10000',
-                    '-d', 'funkey/gunpowder:v0.3-pre5',
-                    'python -u predict_affinities.py ' + self.setup + ' ' + str(self.iteration) + ' ' + self.sample + ' 0'
-                ], stdout=o, stderr=e)
+        call([
+            'run_lsf',
+            '-c', '2',
+            '-g', '1',
+            '-m', '10000',
+            '-d', 'funkey/gunpowder:v0.3-pre5',
+            'python -u predict_affinities.py ' + self.setup + ' ' + str(self.iteration) + ' ' + self.sample + ' 0'
+        ], log_out, log_err)
 
 class ConfigTask(luigi.Task):
     '''Base class for Agglomerate and Evaluate.'''
@@ -184,14 +227,12 @@ class Agglomerate(ConfigTask):
         with open(self.output_basename() + '.config', 'w') as f:
             json.dump(args, f)
         os.chdir(os.path.join(base_dir, '03_process'))
-        with open(log_out, 'w') as o:
-            with open(log_err, 'w') as e:
-                call([
-                    'run_lsf',
-                    '-c', '2',
-                    '-m', '10000',
-                    'python -u agglomerate.py ' + self.output_basename() + '.config'
-                ], stdout=o, stderr=e)
+        call([
+            'run_lsf',
+            '-c', '2',
+            '-m', '10000',
+            'python -u agglomerate.py ' + self.output_basename() + '.config'
+        ], log_out, log_err)
 
 class Evaluate(ConfigTask):
 
@@ -214,14 +255,12 @@ class Evaluate(ConfigTask):
         log_err = self.output_basename(self.threshold) + '.err'
         res_file = self.output_basename(self.threshold) + '.hdf'
 
-        with open(log_out, 'w') as o:
-            with open(log_err, 'w') as e:
-                call([
-                    'run_lsf',
-                    '-c', '2',
-                    '-m', '10000',
-                    'python -u ../04_evaluate/evaluate.py ' + res_file + ' ' + gt_file
-                ], stdout=o, stderr=e)
+        call([
+            'run_lsf',
+            '-c', '2',
+            '-m', '10000',
+            'python -u ../04_evaluate/evaluate.py ' + res_file + ' ' + gt_file
+        ], log_out, log_err)
 
 class EvaluateCombinations(luigi.task.WrapperTask):
 
