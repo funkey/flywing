@@ -10,7 +10,7 @@ NAN_PLACEHOLDER = -np.inf
 metric_keys = ['threshold', 'seg_score', 'tra_score']
 nonrelevant_keys = ['raw', 'gt', 'affinities', 'segmentation', 'offset', 'thresholds', 'error', 'output_basenames' ]
 
-def find_best(results, score='tra_score', k=3, lower_is_better=True):
+def find_best(results, per='sample', score='tra_score', k=3, lower_is_better=True):
     '''Find the best configurations for each of the given samples in one experiment.
     '''
     drop = list(set(results.keys()).intersection(set(nonrelevant_keys)))
@@ -45,14 +45,14 @@ def find_best(results, score='tra_score', k=3, lower_is_better=True):
         by=score,
         ascending=lower_is_better)
 
-    # group again by sample, take first k per sample
-    sample_results = configuration_results.groupby('sample').head(k)
+    # group again by 'per', take first k per 'per'
+    sample_results = configuration_results.groupby(per).head(k)
 
     # sort again by group
     #   this seems necessary, as otherwise pandas shuffles the samples by 
     #   sorting by score
     sample_results = sample_results.sort_values(
-        by=['sample', score],
+        by=[per, score],
         ascending=lower_is_better)
 
     # convert nan back
@@ -60,13 +60,13 @@ def find_best(results, score='tra_score', k=3, lower_is_better=True):
 
     return sample_results
 
-def average_validation(results):
+def average_testing(results):
+
+    # first, make sure we only work on the testing results
+    results = results[results['sample']==results['test_sample']]
 
     drop = list(set(results.keys()).intersection(set(nonrelevant_keys)))
     results = results.drop(columns=drop)
-
-    # first, make sure we only work on the validation results
-    results = results[results['sample']==results['validation_sample']]
 
     # nan values lead to trouble in group-by aggregations
     results = results.replace(np.nan, NAN_PLACEHOLDER)
