@@ -62,8 +62,10 @@ class JsonTarget(luigi.Target):
                 if not self.key in d:
                     # print "no key %s"%self.key
                     return False
-                # print "%s == %s?"%(self.value,d[self.key])
                 if self.value is not None:
+                    # print "%s == %s?"%(self.value,d[self.key])
                     return self.value == d[self.key]
+                else:
+                    return True
         except:
             return False
