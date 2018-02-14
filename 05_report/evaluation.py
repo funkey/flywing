@@ -60,10 +60,14 @@ def find_best(results, per='sample', score='tra_score', k=3, lower_is_better=Tru
 
     return sample_results
 
-def average_testing(results):
+def condense(values):
 
-    # first, make sure we only work on the testing results
-    results = results[results['sample']==results['test_sample']]
+    for i in range(1, len(values)):
+        if values.iloc[i] != values.iloc[i-1]:
+            return 'n/a'
+    return values.iloc[0]
+
+def average(results, group_by):
 
     drop = list(set(results.keys()).intersection(set(nonrelevant_keys)))
     results = results.drop(columns=drop)
@@ -71,27 +75,19 @@ def average_testing(results):
     # nan values lead to trouble in group-by aggregations
     results = results.replace(np.nan, NAN_PLACEHOLDER)
 
-    # get all keys that make one configuration to group results by
-    configuration_keys = list(
-        set(results.keys()) -
-        set(metric_keys) -
-        set(nonrelevant_keys))
-    configuration_keys.remove('sample')
-    configuration_keys.remove('test_sample')
-    configuration_keys.remove('validation_sample')
-    configuration_keys.remove('original_name')
-    configuration_keys.append('threshold')
-
     # tell pandas how to agglomerate values in groups
+    agg_functions = { k: condense for k in results.keys() }
     agg_keys = list(metric_keys)
     agg_keys.remove('threshold')
-    agg_functions = { k: 'mean' for k in agg_keys}
-    agg_functions['sample'] = lambda x: "average_over_%d"%len(x)
+    agg_functions.update({ k: 'mean' for k in agg_keys})
+    agg_functions['sample'] = lambda x: "average over %d"%len(x)
 
     # group results by configurations
-    groups = results.groupby(configuration_keys)
+    groups = results.groupby(group_by)
 
+    # agglomerate
     results = groups.agg(agg_functions)
+    results = results.drop(columns=group_by)
     results = results.reset_index()
 
     return results
