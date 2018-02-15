@@ -49,6 +49,7 @@ def agglomerate_with_waterz(
         merge_function='median_aff',
         init_with_max=True,
         return_merge_history=False,
+        return_region_graph=False,
         **kwargs):
 
     if init_with_max:
@@ -66,7 +67,8 @@ def agglomerate_with_waterz(
             fragments=fragments,
             scoring_function=scoring_functions[merge_function],
             discretize_queue=discretize_queue,
-            return_merge_history=return_merge_history)
+            return_merge_history=return_merge_history,
+            return_region_graph=return_region_graph)
 
 def get_unique_pairs(a, b):
 
