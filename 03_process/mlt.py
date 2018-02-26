@@ -26,7 +26,7 @@ def score_to_cut_prob(score):
 def write_mlt_problem_graph(
         nodes_file,
         edges_file,
-        cells,
+        fragments,
         region_graph):
 
     print("Writing MLT problem...")
@@ -34,23 +34,23 @@ def write_mlt_problem_graph(
     with open(nodes_file, 'w') as nf:
         with open(edges_file, 'w') as ef:
 
-            # create a map from cells to 0-based indices per frame
-            cell_frame_ids = {}
-            for z in range(cells.shape[0]):
+            # create a map from fragments to 0-based indices per frame
+            fragment_frame_ids = {}
+            for z in range(fragments.shape[0]):
 
-                frame = cells[z]
-                frame_cells = np.unique(frame[frame>0])
-                centers = find_centers(frame, frame_cells)
+                frame = fragments[z]
+                frame_fragments = list(np.unique(frame[frame>0]))
+                centers = find_centers(frame, frame_fragments)
 
-                cell_frame_ids.update({
+                fragment_frame_ids.update({
                     f: (z, i)
-                    for i, f in enumerate(frame_cells)
+                    for i, f in enumerate(frame_fragments)
                 })
 
                 # write nodes file
-                for i, cell in enumerate(frame_cells):
+                for i, fragment in enumerate(frame_fragments):
 
-                    cx, cy = centers[cell]
+                    cx, cy = centers[fragment]
 
                     # t id x y p_birth_termination
                     nf.write('%d %d %d %d 0.0\n'%(z, i, cx, cy))
@@ -64,8 +64,8 @@ def write_mlt_problem_graph(
 
                 cut_prob = score_to_cut_prob(score)
 
-                z_u, i_u = cell_frame_ids[u]
-                z_v, i_v = cell_frame_ids[v]
+                z_u, i_u = fragment_frame_ids[u]
+                z_v, i_v = fragment_frame_ids[v]
 
                 assert abs(z_u - z_v) <= 1, (
                     "Edge (%d, %d) connects nodes in frames %d and %d"%(
@@ -73,13 +73,46 @@ def write_mlt_problem_graph(
 
                 ef.write('%d %d %d %d %f\n'%(z_u, i_u, z_v, i_v, cut_prob))
 
-def solve_mlt(cells, region_graph, threshold, solver):
+    return fragment_frame_ids
+
+def replace(array, old_values, new_values):
+
+    values_map = np.arange(int(array.max() + 1), dtype=new_values.dtype)
+    values_map[old_values] = new_values
+
+    return values_map[array]
+
+def read_mlt_solution(fragments, fragment_frame_ids, solution_file):
+
+    frame_ids_fragment = {}
+    for (f, (z, i)) in fragment_frame_ids.items():
+        frame_ids_fragment[(z, i)] = f
+
+    old_values = []
+    new_values = []
+
+    for line in open(solution_file + '-fragment-node-labels.txt', 'r'):
+
+        z, i, label = (int(x) for x in line.split())
+        fragment = frame_ids_fragment[(z, i)]
+
+        old_values.append(fragment)
+        new_values.append(label)
+
+    tracks = replace(
+        fragments,
+        np.array(old_values),
+        np.array(new_values).astype(np.uint64))
+
+    return tracks
+
+def solve_mlt(fragments, region_graph, threshold, merge_function):
 
     binary = {
-        'ilp': './track-ilp',
-        'gla': './track-heuristic-GLA',
-        'klb': './track-heuristic-KLB',
-    }[solver]
+        'mlt-ilp': './track-ilp',
+        'mlt-gla': './track-heuristic-GLA',
+        'mlt-klb': './track-heuristic-KLB',
+    }[merge_function]
 
     # create a temp dir
     # temp_dir = tempfile.mkdtemp()
@@ -91,26 +124,41 @@ def solve_mlt(cells, region_graph, threshold, solver):
 
     try:
 
-        write_mlt_problem_graph(
-                nodes_file,
-                edges_file,
-                cells,
-                region_graph)
+        fragment_frame_ids = write_mlt_problem_graph(
+            nodes_file,
+            edges_file,
+            fragments,
+            region_graph)
 
         print("Solving MLT problem...")
-        check_call([
-            binary,
-            '-n', nodes_file,
-            '-e', edges_file,
-            '-s', solution_file,
-            '-t', str(score_to_cut_prob(threshold)),
-            '-b', str(score_to_cut_prob(threshold))
-        ])
+        try:
+
+            cmd = [
+                binary,
+                '-n', nodes_file,
+                '-e', edges_file,
+                '-s', solution_file,
+                '-t', str(score_to_cut_prob(threshold)),
+                '-b', str(score_to_cut_prob(threshold))
+            ]
+            check_call(cmd)
+
+        except CalledProcessError as e:
+
+            print("Failed to call\n\t" + " ".join(cmd))
+            raise e
+
+        tracks = read_mlt_solution(
+            fragments,
+            fragment_frame_ids,
+            solution_file)
 
     finally:
 
         # shutil.rmtree(temp_dir)
         pass
+
+    return tracks
 
 def track_lineages(
         affs,
@@ -119,7 +167,7 @@ def track_lineages(
         roi,
         resolution,
         output_basenames,
-        solver,
+        merge_function,
         **kwargs):
 
     # prepare affinities for slice and lineage merging
@@ -130,10 +178,8 @@ def track_lineages(
     fragments = watershed(affs, 'maxima_distance')
     fragments[ignore_mask==1] = 0
 
-    outfiles = [ h5py.File(n + '.hdf', 'w') for n in output_basenames ]
-
     # get the region graph
-    for cells, region_graph in agglomerate_with_waterz(
+    for fragments, region_graph in agglomerate_with_waterz(
             affs,
             [0],
             fragments,
@@ -143,29 +189,28 @@ def track_lineages(
 
     for i in range(len(thresholds)):
 
-        lineages = solve_mlt(cells, region_graph, thresholds[i], solver)
+        # TODO: get 2D cells as well
+        tracks = solve_mlt(fragments, region_graph, thresholds[i],
+                merge_function)
 
-        print("Storing 2D segmentation...")
-        f = outfiles[i]
+        print("Storing solution...")
+        with h5py.File(output_basenames[i] + '.hdf', 'w') as f:
 
-        ds = f.create_dataset(
-            'volumes/labels/cells',
-            data=cells,
-            compression="gzip",
-            dtype=np.uint64)
-        ds.attrs['offset'] = roi.get_offset()
-        ds.attrs['resolution'] = resolution
+            # ds = f.create_dataset(
+                # 'volumes/labels/cells',
+                # data=cells,
+                # compression="gzip",
+                # dtype=np.uint64)
+            # ds.attrs['offset'] = roi.get_offset()
+            # ds.attrs['resolution'] = resolution
 
-        print("Storing lineages...")
-        ds = f.create_dataset(
-            'volumes/labels/lineages',
-            data=lineages,
-            compression="gzip")
-        ds.attrs['offset'] = roi.get_offset()
-        ds.attrs['resolution'] = resolution
-
-    for f in outfiles:
-        f.close()
+            print("Storing tracks...")
+            ds = f.create_dataset(
+                'volumes/labels/tracks',
+                data=tracks,
+                compression="gzip")
+            ds.attrs['offset'] = roi.get_offset()
+            ds.attrs['resolution'] = resolution
 
 
 def agglomerate(
