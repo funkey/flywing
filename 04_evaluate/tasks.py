@@ -170,15 +170,15 @@ class ConfigTask(luigi.Task):
             tag += '_cf'
         elif self.parameters['merge_function'] == 'zwatershed': # only for 'zwatershed', for all other ones we use the default values
             tag += '_ah%f_al%f'%(self.parameters['aff_high'],self.parameters['aff_low'])
-        if self.parameters['histogram_quantiles']:
+        if 'histogram_quantiles' in self.parameters and self.parameters['histogram_quantiles']:
             tag += '_hq'
-        if self.parameters['discrete_queue']:
+        if 'discretize_queue' in self.parameters and self.parameters['discrete_queue']:
             tag += '_dq'
-        if self.parameters['dilate_mask'] != 0:
+        if 'dilate_mask' in self.parameters and self.parameters['dilate_mask'] != 0:
             tag += '_dm%d'%self.parameters['dilate_mask']
         if self.parameters['mask_fragments']:
             tag += '_mf'
-        if self.parameters['init_with_max']:
+        if 'init_with_max' in self.parameters and self.parameters['init_with_max']:
             tag += '_im'
         return tag
 
@@ -227,12 +227,20 @@ class Agglomerate(ConfigTask):
         with open(self.output_basename() + '.config', 'w') as f:
             json.dump(args, f)
         os.chdir(os.path.join(base_dir, '03_process'))
-        call([
-            'run_lsf',
-            '-c', '2',
-            '-m', '10000',
-            'python -u agglomerate.py ' + self.output_basename() + '.config'
-        ], log_out, log_err)
+        if 'mlt-' in self.parameters['merge_function']:
+            call([
+                'run_lsf',
+                '-c', '2',
+                '-m', '10000',
+                'python -u mlt.py ' + self.output_basename() + '.config'
+            ], log_out, log_err)
+        else:
+            call([
+                'run_lsf',
+                '-c', '2',
+                '-m', '10000',
+                'python -u agglomerate.py ' + self.output_basename() + '.config'
+            ], log_out, log_err)
 
 class Evaluate(ConfigTask):
 
