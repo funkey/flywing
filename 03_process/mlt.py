@@ -5,11 +5,12 @@ import numpy as np
 import os
 import time
 import tempfile
+import shutil
 from coordinate import Coordinate
 from roi import Roi
 from watershed import watershed
 from agglomerate import agglomerate_with_waterz
-from subprocess import check_call
+from subprocess import check_call, CalledProcessError
 from scipy.ndimage.measurements import center_of_mass
 
 def find_centers(ids, all_ids):
@@ -91,6 +92,7 @@ def read_mlt_solution(fragments, fragment_frame_ids, solution_file):
     old_values = []
     new_values = []
 
+    # read lineages
     for line in open(solution_file + '-fragment-node-labels.txt', 'r'):
 
         z, i, label = (int(x) for x in line.split())
@@ -99,12 +101,68 @@ def read_mlt_solution(fragments, fragment_frame_ids, solution_file):
         old_values.append(fragment)
         new_values.append(label)
 
+    lineages = replace(
+        fragments,
+        np.array(old_values),
+        np.array(new_values).astype(np.uint64))
+
+    old_values = []
+    new_values = []
+
+    # read tracks
+    track_id = 1
+    track_start_end = [ None ] # track id 0 not used
+    for line in open(solution_file + '-cell-nodes.txt', 'r'):
+
+        # get all (t, id) pairs part of the same track
+        cell_nodes = [
+            tuple(int(x) for x in z_id.split())
+            for z_id in line.strip().strip('()').split(') (')
+        ]
+
+        # get all fragments part of the same track
+        track_fragments = [ frame_ids_fragment[x] for x in cell_nodes ]
+
+        # replace all fragments with their track id
+        old_values += track_fragments
+        new_values += [track_id]*len(track_fragments)
+
+        # get start and end of track
+        frames = [ z for z, i in cell_nodes ]
+        track_start_end.append((min(frames), max(frames)))
+
+        track_id += 1
+
+    num_tracks = track_id - 1
+
     tracks = replace(
         fragments,
         np.array(old_values),
         np.array(new_values).astype(np.uint64))
 
-    return tracks
+    # read track graph edges
+    parents = {}
+    for line in open(solution_file + '-cell-edges.txt', 'r'):
+
+        # add +1, our ids start at 1, mlt output at 0 (zero is reserved in track
+        # graph later for "no parent")
+        parent, child = (int(x) + 1 for x in line.split())
+
+        assert child not in parents
+        parents[child] = parent
+
+    # create track graph ready to write out
+    track_graph = np.array([
+        [
+            track_id,
+            track_start_end[track_id][0],
+            track_start_end[track_id][1],
+            parents[track_id] if track_id in parents else 0
+        ]
+        for track_id in range(1, num_tracks + 1)
+    ], dtype=np.uint64)
+
+    return tracks, track_graph, lineages
 
 def solve_mlt(fragments, region_graph, threshold, merge_function):
 
@@ -115,8 +173,7 @@ def solve_mlt(fragments, region_graph, threshold, merge_function):
     }[merge_function]
 
     # create a temp dir
-    # temp_dir = tempfile.mkdtemp()
-    temp_dir = 'test'
+    temp_dir = tempfile.mkdtemp()
 
     nodes_file = os.path.join(temp_dir, 'nodes')
     edges_file = os.path.join(temp_dir, 'edges')
@@ -148,17 +205,17 @@ def solve_mlt(fragments, region_graph, threshold, merge_function):
             print("Failed to call\n\t" + " ".join(cmd))
             raise e
 
-        tracks = read_mlt_solution(
+        tracks, track_graph, lineages = read_mlt_solution(
             fragments,
             fragment_frame_ids,
             solution_file)
 
     finally:
 
-        # shutil.rmtree(temp_dir)
+        shutil.rmtree(temp_dir)
         pass
 
-    return tracks
+    return tracks, track_graph, lineages
 
 def track_lineages(
         affs,
@@ -189,20 +246,23 @@ def track_lineages(
 
     for i in range(len(thresholds)):
 
-        # TODO: get 2D cells as well
-        tracks = solve_mlt(fragments, region_graph, thresholds[i],
-                merge_function)
+        tracks, track_graph, lineages = solve_mlt(
+            fragments,
+            region_graph,
+            thresholds[i],
+            merge_function)
 
         print("Storing solution...")
         with h5py.File(output_basenames[i] + '.hdf', 'w') as f:
 
-            # ds = f.create_dataset(
-                # 'volumes/labels/cells',
-                # data=cells,
-                # compression="gzip",
-                # dtype=np.uint64)
-            # ds.attrs['offset'] = roi.get_offset()
-            # ds.attrs['resolution'] = resolution
+            print("Storing fragments...")
+            ds = f.create_dataset(
+                'volumes/labels/fragments',
+                data=fragments,
+                compression="gzip",
+                dtype=np.uint64)
+            ds.attrs['offset'] = roi.get_offset()
+            ds.attrs['resolution'] = resolution
 
             print("Storing tracks...")
             ds = f.create_dataset(
@@ -212,6 +272,20 @@ def track_lineages(
             ds.attrs['offset'] = roi.get_offset()
             ds.attrs['resolution'] = resolution
 
+            print("Storing track graph...")
+            f.create_dataset(
+                'graphs/track_graph',
+                data=track_graph,
+                compression="gzip")
+
+            print("Storing lineages...")
+            ds = f.create_dataset(
+                'volumes/labels/lineages',
+                data=lineages,
+                compression="gzip",
+                dtype=np.uint64)
+            ds.attrs['offset'] = roi.get_offset()
+            ds.attrs['resolution'] = resolution
 
 def agglomerate(
         setup,
