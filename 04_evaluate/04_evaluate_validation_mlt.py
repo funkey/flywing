@@ -34,7 +34,8 @@ if __name__ == '__main__':
             'iterations': [50000, 100000, 150000],
             'samples': [ validation ],
             'thresholds': [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
-            'merge_functions': ['mlt-ilp', 'mlt-gla', 'mlt-klb'],
+            # 'merge_functions': ['mlt-gla', 'mlt-klb', 'mlt-ilp'],
+            'merge_functions': ['mlt-gla'],
             'custom_fragments': True,
             'keep_segmentation': True,
             'mask_fragments': True}
@@ -50,10 +51,8 @@ if __name__ == '__main__':
     set_base_dir(os.path.abspath('..'))
 
     luigi.build(
-            # jobs,
-            [jobs[0]],
-            # workers=50,
-            workers=1,
+            jobs,
+            workers=50,
             scheduler_host='slowpoke1.int.janelia.org',
             logging_conf_file='/groups/saalfeld/home/funkej/.luigi/logging.conf'
     )
