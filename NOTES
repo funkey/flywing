@@ -10,3 +10,59 @@ Dataset conventions
   /graphs
 
     /track_graph  Graph of "tracks", matrix with rows (ID, start, end, parent ID or 0)
+
+MLT
+===
+
+Nodes
+-----
+
+  t id x y p_birth_termination
+
+  • IDs have to be zero-based *per timestep*.
+  • how to get p_birth_termination?
+
+Edges
+-----
+
+  t0 id0 t1 id1 weight
+
+  The weight has to be in [0, 1], and seems to correspond to a probability
+  It is recomputed as w' = log((1-w)/w)
+
+  The cut prior is in the same units [0, 1], recomputed in the same way, and
+  added to the previous w'.
+
+  Say the original w is 0.9, then w' = -2.2. This favours cutting, hence w is
+  the probability of a cut. This is in line with the command line help which refers to   the prior argument as a "cut prior": The higher, the more likely the cut.
+
+Methods
+-------
+
+ILP, exact (Jug. et al?) ILP solution
+
+GLA, greedy lineage agglomeration
+
+KLB, Kernighan-Lin with optimal branchings
+
+Output
+------
+
+  "cell": What we call a track?
+
+  solution-fragment-node-labels.txt:
+
+    t  id  cell
+    ⇒ this should be all we need to create a lineage volume
+
+  solution-cell-nodes.txt
+
+    (t_0 id_0)(t_1 id_1)...(t_n id_n)
+    ⇒ one line per "cell", containing all nodes
+    ⇒ ID is line number, zero-based
+
+  solution-cell-edges.txt
+
+    id_u id_v
+    ⇒ parent-to-child edges
+    ⇒ ids are line numbers in solution-cell-nodes.txt, zero-based
