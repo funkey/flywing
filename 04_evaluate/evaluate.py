@@ -3,17 +3,10 @@ import h5py
 import numpy as np
 import json
 from segtra import evaluate_segtra
-from track_graph import add_track_graph
 
 def evaluate_files(res_file, gt_file):
 
     print("Reading volumes...")
-
-    with h5py.File(res_file, 'r') as f:
-        track_graph_present = 'graphs/track_graph' in f
-
-    if not track_graph_present:
-        add_track_graph(res_file)
 
     with h5py.File(res_file, 'r') as f:
         res_tracks = np.array(f['volumes/labels/tracks'])
