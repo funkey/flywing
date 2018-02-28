@@ -8,6 +8,7 @@ import waterz
 from coordinate import Coordinate
 from roi import Roi
 from watershed import watershed
+from greedy_track import greedy_track
 
 scoring_functions = {
 
@@ -51,6 +52,8 @@ def agglomerate_with_waterz(
         return_merge_history=False,
         return_region_graph=False,
         **kwargs):
+
+    print("Agglomerating with %s"%merge_function)
 
     if init_with_max:
         merge_function += '_maxinit'
@@ -100,7 +103,7 @@ def agglomerate_lineages(
     outfiles = [ h5py.File(n + '.hdf', 'w') for n in output_basenames ]
 
     i = 0
-    # outer loop: merge in 2D only
+    # agglomerate in 2D only
     for cells in agglomerate_with_waterz(
             affs_xy,
             thresholds,
@@ -118,37 +121,73 @@ def agglomerate_lineages(
         ds.attrs['offset'] = roi.get_offset()
         ds.attrs['resolution'] = resolution
 
-        # inner loop: merge across z only
+        # merge across z with greedy heuristic
         print("Agglomerating in z...")
         merge_z_args = kwargs
         merge_z_args['merge_function'] = 'max_aff'
-        for lineages_history in agglomerate_with_waterz(
+        for lineages_rag in agglomerate_with_waterz(
             affs_z,
-            [thresholds[i]],
+            [0],
             cells.copy(),
-            return_merge_history=True,
+            return_region_graph=True,
             **merge_z_args):
 
-            lineages = lineages_history[0]
-            history = lineages_history[1]
+            threshold = thresholds[i]
+            rag = lineages_rag[1]
 
-            merge_list = np.array([ [h['a'], h['b'], h['c']] for h in history ])
-            merge_scores = np.array([ h['score'] for h in history ])
+            # get all inter-frame edges and their scores
+            edges = [ [] ]*(cells.shape[0] - 1)
+            edge_weights = [ [] ]*(cells.shape[0] - 1)
+            cell_frame = {}
+            for z in range(cells.shape[0]):
+                cell_frame.update({
+                    cell: z
+                    for cell in np.unique(cells[z])
+                })
+            for edge in rag:
 
-            print("Storing lineages...")
+                u = edge['u']
+                v = edge['v']
+                weight = 1.0 - edge['score']
+
+                z_u = cell_frame[u]
+                z_v = cell_frame[v]
+
+                # only inter-frame edges
+                if abs(z_u - z_v) != 1:
+                    continue
+
+                if z_u > z_v:
+                    z_u, z_v = z_v, z_u
+                    u, v = v, u
+
+                edges[z_u].append([u, v])
+                edge_weights[z_u].append(weight)
+
+            tracks, track_graph = greedy_track(
+                cells.copy(),
+                edges,
+                edge_weights,
+                1.0 - threshold)
+
+            print("Storing tracks...")
             f.create_dataset(
-                'volumes/labels/lineages',
-                data=lineages,
+                'volumes/labels/tracks',
+                data=tracks,
                 compression="gzip")
 
-            print("Storing merge-history from cells to lineages...")
+            track_graph_data = np.array([
+                [
+                    t.label,
+                    t.start,
+                    t.end,
+                    t.parent.label if t.parent is not None else 0
+                ]
+                for t in track_graph
+            ], dtype=np.uint64)
             f.create_dataset(
-                'graphs/lineages_merge_history',
-                data=merge_list,
-                compression="gzip")
-            f.create_dataset(
-                'graphs/lineages_merge_scores',
-                data=merge_scores,
+                'graphs/track_graph',
+                data=track_graph_data,
                 compression="gzip")
 
         i += 1
