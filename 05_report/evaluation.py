@@ -79,7 +79,7 @@ def average(results, group_by):
     agg_functions = { k: condense for k in results.keys() }
     agg_keys = list(metric_keys)
     agg_keys.remove('threshold')
-    agg_functions.update({ k: 'mean' for k in agg_keys})
+    agg_functions.update({ k: ['mean', 'std'] for k in agg_keys})
     agg_functions['sample'] = lambda x: "average over %d"%len(x)
 
     # group results by configurations
