@@ -231,6 +231,7 @@ class Agglomerate(ConfigTask):
             call([
                 'run_lsf',
                 '-c', '2',
+                '-g', '0',
                 '-m', '10000',
                 'python -u mlt.py ' + self.output_basename() + '.config'
             ], log_out, log_err)
@@ -238,6 +239,7 @@ class Agglomerate(ConfigTask):
             call([
                 'run_lsf',
                 '-c', '2',
+                '-g', '0',
                 '-m', '10000',
                 'python -u agglomerate.py ' + self.output_basename() + '.config'
             ], log_out, log_err)
@@ -266,6 +268,7 @@ class Evaluate(ConfigTask):
         call([
             'run_lsf',
             '-c', '2',
+            '-g', '0',
             '-m', '10000',
             'python -u ../04_evaluate/evaluate.py ' + res_file + ' ' + gt_file
         ], log_out, log_err)
